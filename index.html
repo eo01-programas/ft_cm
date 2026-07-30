@@ -790,6 +790,10 @@
       border-radius: 10px;
       background: var(--white);
       box-shadow: 0 10px 28px rgba(16,40,29,.14);
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      cursor: crosshair;
     }
 
     .editor-controls { display: grid; align-content: start; gap: 17px; }
@@ -1074,33 +1078,17 @@
         <div class="editor-canvas-wrap"><canvas id="editorCanvas" width="600" height="800"></canvas></div>
         <div class="editor-controls">
           <div class="control-group">
-            <label for="zoomRange"><span>Zoom / Escala</span><span id="zoomValue">100%</span></label>
-            <input id="zoomRange" type="range" min="0.4" max="3.0" value="1" step="0.01" />
-          </div>
-          <div class="control-group">
-            <label><span>Recorte Rápido (Proporción)</span></label>
+            <label><span>Proporción de Recorte</span></label>
             <div class="rotate-row" style="grid-template-columns: repeat(4, 1fr); gap: 6px;">
-              <button id="cropRatioFree" class="btn btn-light" style="padding: 6px 4px; font-size: 11px;" type="button">Completo</button>
-              <button id="cropRatio34" class="btn btn-light" style="padding: 6px 4px; font-size: 11px;" type="button">3:4</button>
-              <button id="cropRatio11" class="btn btn-light" style="padding: 6px 4px; font-size: 11px;" type="button">1:1</button>
-              <button id="cropRatio45" class="btn btn-light" style="padding: 6px 4px; font-size: 11px;" type="button">4:5</button>
+              <button id="cropRatioFree" class="btn btn-light" style="padding: 8px 4px; font-size: 12px;" type="button">Completo</button>
+              <button id="cropRatio34" class="btn btn-light" style="padding: 8px 4px; font-size: 12px;" type="button">3:4</button>
+              <button id="cropRatio11" class="btn btn-light" style="padding: 8px 4px; font-size: 12px;" type="button">1:1</button>
+              <button id="cropRatio45" class="btn btn-light" style="padding: 8px 4px; font-size: 12px;" type="button">4:5</button>
             </div>
           </div>
           <div class="control-group">
-            <label for="cropYRange"><span>Recorte Vertical (Alto)</span><span id="cropYValue">0%</span></label>
-            <input id="cropYRange" type="range" min="0" max="40" value="0" step="1" />
-          </div>
-          <div class="control-group">
-            <label for="cropXRange"><span>Recorte Horizontal (Ancho)</span><span id="cropXValue">0%</span></label>
-            <input id="cropXRange" type="range" min="0" max="40" value="0" step="1" />
-          </div>
-          <div class="control-group">
-            <label for="xRange"><span>Desplazamiento Horizontal</span><span id="xValue">0</span></label>
-            <input id="xRange" type="range" min="-100" max="100" value="0" step="1" />
-          </div>
-          <div class="control-group">
-            <label for="yRange"><span>Desplazamiento Vertical</span><span id="yValue">0</span></label>
-            <input id="yRange" type="range" min="-100" max="100" value="0" step="1" />
+            <label for="zoomRange"><span>Ajuste de Zoom</span><span id="zoomValue">100%</span></label>
+            <input id="zoomRange" type="range" min="1.0" max="2.5" value="1" step="0.01" />
           </div>
           <div class="control-group">
             <label><span>Rotación</span><span id="rotationValue">0°</span></label>
@@ -1109,7 +1097,10 @@
               <button id="rotateRightBtn" class="btn btn-light" type="button">↷ 90°</button>
             </div>
           </div>
-          <div class="generate-note">Recorta y encuadra la prenda manteniendo la misma altura en las 4 vistas.</div>
+          <div class="control-group">
+            <button id="resetCropBtn" class="btn btn-light btn-block" type="button">↺ Restablecer Recorte</button>
+          </div>
+          <div class="generate-note">💡 <strong>Recorte Interactivo:</strong> Arrastra las esquinas ⌜ ⌝ o bordes de la caja blanca sobre la foto para ajustar la zona de recorte exacto.</div>
         </div>
       </div>
       <div class="modal-actions">
@@ -1423,7 +1414,21 @@
         const reader = new FileReader();
         reader.onload = () => assignShot(VIEWS[state.activeIndex].id, reader.result, file.name);
         reader.onerror = () => showToast('No se pudo leer la imagen.', 'error');
-        reader.readAsDataURL(file);
+      function getCropNorm(shot) {
+        if (!shot) return { x: 0, y: 0, w: 1, h: 1 };
+        if (shot.cropNorm && typeof shot.cropNorm.w === 'number') {
+          return shot.cropNorm;
+        }
+        const cropLeft = typeof shot.cropLeft === 'number' ? shot.cropLeft : (shot.cropX || 0);
+        const cropRight = typeof shot.cropRight === 'number' ? shot.cropRight : (shot.cropX || 0);
+        const cropTop = typeof shot.cropTop === 'number' ? shot.cropTop : (shot.cropY || 0);
+        const cropBottom = typeof shot.cropBottom === 'number' ? shot.cropBottom : (shot.cropY || 0);
+
+        const x = Math.max(0, Math.min(0.85, cropLeft / 100));
+        const y = Math.max(0, Math.min(0.85, cropTop / 100));
+        const w = Math.max(0.1, Math.min(1 - x, 1 - (cropLeft + cropRight) / 100));
+        const h = Math.max(0.1, Math.min(1 - y, 1 - (cropTop + cropBottom) / 100));
+        return { x, y, w, h };
       }
 
       function assignShot(viewId, dataUrl, originalName) {
@@ -1434,8 +1439,7 @@
           originalName,
           rotation: 0,
           zoom: 1,
-          cropX: 0,
-          cropY: 0,
+          cropNorm: { x: 0, y: 0, w: 1, h: 1 },
           x: 0,
           y: 0
         };
@@ -1498,16 +1502,7 @@
         const draft = state.editorDraft;
         if (!draft) return;
         $('zoomRange').value = draft.zoom || 1;
-        $('cropYRange').value = draft.cropY || 0;
-        $('cropXRange').value = draft.cropX || 0;
-        $('xRange').value = draft.x || 0;
-        $('yRange').value = draft.y || 0;
-
         $('zoomValue').textContent = `${Math.round((draft.zoom || 1) * 100)}%`;
-        $('cropYValue').textContent = `${draft.cropY || 0}%`;
-        $('cropXValue').textContent = `${draft.cropX || 0}%`;
-        $('xValue').textContent = draft.x || 0;
-        $('yValue').textContent = draft.y || 0;
         $('rotationValue').textContent = `${normalizeRotation(draft.rotation || 0)}°`;
       }
 
@@ -1544,29 +1539,35 @@
         const oriented = orientedCanvas(img, shot.rotation || 0);
         const iw = oriented.width;
         const ih = oriented.height;
+        const norm = getCropNorm(shot);
+
+        const sx = iw * norm.x;
+        const sy = ih * norm.y;
+        const sw = Math.max(10, iw * norm.w);
+        const sh = Math.max(10, ih * norm.h);
+
         const zoom = shot.zoom || 1;
-        const cropX = ((shot.cropX || 0) / 100);
-        const cropY = ((shot.cropY || 0) / 100);
-
-        const effIw = Math.max(iw * 0.1, iw * (1 - cropX * 2));
-        const effIh = Math.max(ih * 0.1, ih * (1 - cropY * 2));
-
-        const baseScale = Math.max(dw / effIw, dh / effIh);
+        const baseScale = Math.max(dw / sw, dh / sh);
         const scale = baseScale * zoom;
 
-        const sw = Math.min(iw, dw / scale);
-        const sh = Math.min(ih, dh / scale);
+        const finalSw = Math.min(sw, dw / scale);
+        const finalSh = Math.min(sh, dh / scale);
+        const finalSx = sx + (sw - finalSw) / 2;
+        const finalSy = sy + (sh - finalSh) / 2;
 
-        const maxX = Math.max(0, (effIw - sw) / 2);
-        const maxY = Math.max(0, (effIh - sh) / 2);
+        ctx.drawImage(oriented, finalSx, finalSy, finalSw, finalSh, dx, dy, dw, dh);
+      }
 
-        const startX = (iw * cropX) + Math.max(0, (effIw - sw) / 2) + ((shot.x || 0) / 100) * maxX;
-        const startY = (ih * cropY) + Math.max(0, (effIh - sh) / 2) + ((shot.y || 0) / 100) * maxY;
-
-        const sx = Math.max(0, Math.min(iw - sw, startX));
-        const sy = Math.max(0, Math.min(ih - sh, startY));
-
-        ctx.drawImage(oriented, sx, sy, sw, sh, dx, dy, dw, dh);
+      function getEditorImageGeometry(oriented) {
+        const margin = 16;
+        const maxW = 600 - margin * 2;
+        const maxH = 800 - margin * 2;
+        const fitScale = Math.min(maxW / oriented.width, maxH / oriented.height);
+        const imgW = oriented.width * fitScale;
+        const imgH = oriented.height * fitScale;
+        const imgX = (600 - imgW) / 2;
+        const imgY = (800 - imgH) / 2;
+        return { imgX, imgY, imgW, imgH, fitScale };
       }
 
       async function renderEditor() {
@@ -1574,31 +1575,242 @@
         if (!draft) return;
         try {
           const img = await loadImage(draft.dataUrl);
-          editorCtx.fillStyle = '#ffffff';
+          const oriented = orientedCanvas(img, draft.rotation || 0);
+          const { imgX, imgY, imgW, imgH } = getEditorImageGeometry(oriented);
+
+          // Dark canvas background
+          editorCtx.fillStyle = '#1c1e1d';
           editorCtx.fillRect(0, 0, editorCanvas.width, editorCanvas.height);
-          drawShotCover(editorCtx, img, draft, 0, 0, editorCanvas.width, editorCanvas.height);
 
-          // Grid and Crop border
-          editorCtx.strokeStyle = 'rgba(34, 197, 94, .9)';
-          editorCtx.lineWidth = 3;
-          editorCtx.strokeRect(10, 10, editorCanvas.width - 20, editorCanvas.height - 20);
+          // Draw STATIC image centered
+          editorCtx.drawImage(oriented, imgX, imgY, imgW, imgH);
 
-          editorCtx.strokeStyle = 'rgba(255,255,255,.6)';
+          // Crop Box on Canvas
+          const norm = getCropNorm(draft);
+          const boxX = imgX + norm.x * imgW;
+          const boxY = imgY + norm.y * imgH;
+          const boxW = norm.w * imgW;
+          const boxH = norm.h * imgH;
+
+          // Dark Overlay outside crop box
+          editorCtx.fillStyle = 'rgba(0, 0, 0, 0.62)';
+          editorCtx.fillRect(0, 0, editorCanvas.width, boxY);
+          editorCtx.fillRect(0, boxY + boxH, editorCanvas.width, editorCanvas.height - (boxY + boxH));
+          editorCtx.fillRect(0, boxY, boxX, boxH);
+          editorCtx.fillRect(boxX + boxW, boxY, editorCanvas.width - (boxX + boxW), boxH);
+
+          // Bounding box border
+          editorCtx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+          editorCtx.lineWidth = 2;
+          editorCtx.strokeRect(boxX, boxY, boxW, boxH);
+
+          // 3x3 Grid
+          editorCtx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
           editorCtx.lineWidth = 1;
           [1/3, 2/3].forEach(f => {
             editorCtx.beginPath();
-            editorCtx.moveTo(editorCanvas.width * f, 10);
-            editorCtx.lineTo(editorCanvas.width * f, editorCanvas.height - 10);
+            editorCtx.moveTo(boxX + boxW * f, boxY);
+            editorCtx.lineTo(boxX + boxW * f, boxY + boxH);
             editorCtx.stroke();
+
             editorCtx.beginPath();
-            editorCtx.moveTo(10, editorCanvas.height * f);
-            editorCtx.lineTo(editorCanvas.width - 10, editorCanvas.height * f);
+            editorCtx.moveTo(boxX, boxY + boxH * f);
+            editorCtx.lineTo(boxX + boxW, boxY + boxH * f);
             editorCtx.stroke();
           });
+
+          // White thick corner L-brackets (like the photo!)
+          const arm = Math.min(24, boxW / 4, boxH / 4);
+          editorCtx.strokeStyle = '#ffffff';
+          editorCtx.lineWidth = 5;
+          editorCtx.lineCap = 'square';
+
+          // Top-Left
+          editorCtx.beginPath();
+          editorCtx.moveTo(boxX, boxY + arm);
+          editorCtx.lineTo(boxX, boxY);
+          editorCtx.lineTo(boxX + arm, boxY);
+          editorCtx.stroke();
+
+          // Top-Right
+          editorCtx.beginPath();
+          editorCtx.moveTo(boxX + boxW - arm, boxY);
+          editorCtx.lineTo(boxX + boxW, boxY);
+          editorCtx.lineTo(boxX + boxW, boxY + arm);
+          editorCtx.stroke();
+
+          // Bottom-Left
+          editorCtx.beginPath();
+          editorCtx.moveTo(boxX, boxY + boxH - arm);
+          editorCtx.lineTo(boxX, boxY + boxH);
+          editorCtx.lineTo(boxX + arm, boxY + boxH);
+          editorCtx.stroke();
+
+          // Bottom-Right
+          editorCtx.beginPath();
+          editorCtx.moveTo(boxX + boxW - arm, boxY + boxH);
+          editorCtx.lineTo(boxX + boxW, boxY + boxH);
+          editorCtx.lineTo(boxX + boxW, boxY + boxH - arm);
+          editorCtx.stroke();
+
+          // White thick side bars (like the photo!)
+          const hLen = 16;
+          // Top center
+          editorCtx.beginPath();
+          editorCtx.moveTo(boxX + boxW / 2 - hLen, boxY);
+          editorCtx.lineTo(boxX + boxW / 2 + hLen, boxY);
+          editorCtx.stroke();
+
+          // Bottom center
+          editorCtx.beginPath();
+          editorCtx.moveTo(boxX + boxW / 2 - hLen, boxY + boxH);
+          editorCtx.lineTo(boxX + boxW / 2 + hLen, boxY + boxH);
+          editorCtx.stroke();
+
+          // Left center
+          editorCtx.beginPath();
+          editorCtx.moveTo(boxX, boxY + boxH / 2 - hLen);
+          editorCtx.lineTo(boxX, boxY + boxH / 2 + hLen);
+          editorCtx.stroke();
+
+          // Right center
+          editorCtx.beginPath();
+          editorCtx.moveTo(boxX + boxW, boxY + boxH / 2 - hLen);
+          editorCtx.lineTo(boxX + boxW, boxY + boxH / 2 + hLen);
+          editorCtx.stroke();
+
         } catch (error) {
           console.error(error);
           showToast('No se pudo mostrar la foto.', 'error');
         }
+      }
+
+      let dragMode = null;
+      let dragStartPos = { x: 0, y: 0 };
+      let dragStartBox = { x: 0, y: 0, w: 0, h: 0 };
+
+      function getCanvasPointerPos(event) {
+        const rect = editorCanvas.getBoundingClientRect();
+        const scaleX = editorCanvas.width / rect.width;
+        const scaleY = editorCanvas.height / rect.height;
+        const clientX = event.touches ? event.touches[0].clientX : event.clientX;
+        const clientY = event.touches ? event.touches[0].clientY : event.clientY;
+        return {
+          x: (clientX - rect.left) * scaleX,
+          y: (clientY - rect.top) * scaleY
+        };
+      }
+
+      function getHitHandle(pos, boxX, boxY, boxW, boxH) {
+        const r = 38;
+        const { x, y } = pos;
+
+        if (Math.hypot(x - boxX, y - boxY) < r) return 'tl';
+        if (Math.hypot(x - (boxX + boxW), y - boxY) < r) return 'tr';
+        if (Math.hypot(x - boxX, y - (boxY + boxH)) < r) return 'bl';
+        if (Math.hypot(x - (boxX + boxW), y - (boxY + boxH)) < r) return 'br';
+
+        if (Math.abs(y - boxY) < r && x >= boxX - r && x <= boxX + boxW + r) return 't';
+        if (Math.abs(y - (boxY + boxH)) < r && x >= boxX - r && x <= boxX + boxW + r) return 'b';
+        if (Math.abs(x - boxX) < r && y >= boxY - r && y <= boxY + boxH + r) return 'l';
+        if (Math.abs(x - (boxX + boxW)) < r && y >= boxY - r && y <= boxY + boxH + r) return 'r';
+
+        if (x >= boxX && x <= boxX + boxW && y >= boxY && y <= boxY + boxH) return 'move';
+
+        return null;
+      }
+
+      async function handleCanvasPointerStart(event) {
+        if (!state.editorDraft) return;
+        const draft = state.editorDraft;
+        const pos = getCanvasPointerPos(event);
+
+        const img = await loadImage(draft.dataUrl);
+        const oriented = orientedCanvas(img, draft.rotation || 0);
+        const { imgX, imgY, imgW, imgH } = getEditorImageGeometry(oriented);
+
+        const norm = getCropNorm(draft);
+        const boxX = imgX + norm.x * imgW;
+        const boxY = imgY + norm.y * imgH;
+        const boxW = norm.w * imgW;
+        const boxH = norm.h * imgH;
+
+        dragMode = getHitHandle(pos, boxX, boxY, boxW, boxH);
+        if (dragMode) {
+          dragStartPos = pos;
+          dragStartBox = { x: boxX, y: boxY, w: boxW, h: boxH, imgX, imgY, imgW, imgH };
+        }
+      }
+
+      function handleCanvasPointerMove(event) {
+        if (!dragMode || !state.editorDraft) return;
+        if (event.cancelable) event.preventDefault();
+        const draft = state.editorDraft;
+        const pos = getCanvasPointerPos(event);
+        const dx = pos.x - dragStartPos.x;
+        const dy = pos.y - dragStartPos.y;
+
+        const { imgX, imgY, imgW, imgH } = dragStartBox;
+        let { x, y, w, h } = dragStartBox;
+        const minW = 40;
+        const minH = 40;
+
+        if (dragMode === 'tl') {
+          let newX = Math.max(imgX, Math.min(dragStartBox.x + dragStartBox.w - minW, dragStartBox.x + dx));
+          let newY = Math.max(imgY, Math.min(dragStartBox.y + dragStartBox.h - minH, dragStartBox.y + dy));
+          w = dragStartBox.x + dragStartBox.w - newX;
+          h = dragStartBox.y + dragStartBox.h - newY;
+          x = newX;
+          y = newY;
+        } else if (dragMode === 'tr') {
+          let newMaxX = Math.min(imgX + imgW, Math.max(dragStartBox.x + minW, dragStartBox.x + dragStartBox.w + dx));
+          let newY = Math.max(imgY, Math.min(dragStartBox.y + dragStartBox.h - minH, dragStartBox.y + dy));
+          w = newMaxX - dragStartBox.x;
+          h = dragStartBox.y + dragStartBox.h - newY;
+          y = newY;
+        } else if (dragMode === 'bl') {
+          let newX = Math.max(imgX, Math.min(dragStartBox.x + dragStartBox.w - minW, dragStartBox.x + dx));
+          let newMaxY = Math.min(imgY + imgH, Math.max(dragStartBox.y + minH, dragStartBox.y + dragStartBox.h + dy));
+          w = dragStartBox.x + dragStartBox.w - newX;
+          h = newMaxY - dragStartBox.y;
+          x = newX;
+        } else if (dragMode === 'br') {
+          let newMaxX = Math.min(imgX + imgW, Math.max(dragStartBox.x + minW, dragStartBox.x + dragStartBox.w + dx));
+          let newMaxY = Math.min(imgY + imgH, Math.max(dragStartBox.y + minH, dragStartBox.y + dragStartBox.h + dy));
+          w = newMaxX - dragStartBox.x;
+          h = newMaxY - dragStartBox.y;
+        } else if (dragMode === 't') {
+          let newY = Math.max(imgY, Math.min(dragStartBox.y + dragStartBox.h - minH, dragStartBox.y + dy));
+          h = dragStartBox.y + dragStartBox.h - newY;
+          y = newY;
+        } else if (dragMode === 'b') {
+          let newMaxY = Math.min(imgY + imgH, Math.max(dragStartBox.y + minH, dragStartBox.y + dragStartBox.h + dy));
+          h = newMaxY - dragStartBox.y;
+        } else if (dragMode === 'l') {
+          let newX = Math.max(imgX, Math.min(dragStartBox.x + dragStartBox.w - minW, dragStartBox.x + dx));
+          w = dragStartBox.x + dragStartBox.w - newX;
+          x = newX;
+        } else if (dragMode === 'r') {
+          let newMaxX = Math.min(imgX + imgW, Math.max(dragStartBox.x + minW, dragStartBox.x + dragStartBox.w + dx));
+          w = newMaxX - dragStartBox.x;
+        } else if (dragMode === 'move') {
+          x = Math.max(imgX, Math.min(imgX + imgW - w, dragStartBox.x + dx));
+          y = Math.max(imgY, Math.min(imgY + imgH - h, dragStartBox.y + dy));
+        }
+
+        const normX = Math.max(0, Math.min(1, (x - imgX) / imgW));
+        const normY = Math.max(0, Math.min(1, (y - imgY) / imgH));
+        const normW = Math.max(0.05, Math.min(1 - normX, w / imgW));
+        const normH = Math.max(0.05, Math.min(1 - normY, h / imgH));
+
+        draft.cropNorm = { x: normX, y: normY, w: normW, h: normH };
+        renderEditor();
+      }
+
+      function handleCanvasPointerEnd() {
+        dragMode = null;
+      }PointerEnd() {
+        dragMode = null;
       }
 
       async function createShotDataUrl(viewId, width, height, quality = .9) {
@@ -1927,60 +2139,68 @@
         $('cancelEditorBtn').addEventListener('click', () => closeEditor(false));
         $('saveEditorBtn').addEventListener('click', () => closeEditor(true));
 
-        ['zoomRange', 'cropYRange', 'cropXRange', 'xRange', 'yRange'].forEach(id => {
-          $(id).addEventListener('input', () => {
-            if (!state.editorDraft) return;
-            state.editorDraft.zoom = Number($('zoomRange').value);
-            state.editorDraft.cropY = Number($('cropYRange').value);
-            state.editorDraft.cropX = Number($('cropXRange').value);
-            state.editorDraft.x = Number($('xRange').value);
-            state.editorDraft.y = Number($('yRange').value);
-            syncEditorControls();
-            renderEditor();
-          });
-        });
+        editorCanvas.addEventListener('pointerdown', handleCanvasPointerStart);
+        window.addEventListener('pointermove', handleCanvasPointerMove);
+        window.addEventListener('pointerup', handleCanvasPointerEnd);
+        window.addEventListener('pointercancel', handleCanvasPointerEnd);
 
-        $('cropRatioFree').addEventListener('click', () => {
+        editorCanvas.addEventListener('touchstart', handleCanvasPointerStart, { passive: false });
+        window.addEventListener('touchmove', handleCanvasPointerMove, { passive: false });
+        window.addEventListener('touchend', handleCanvasPointerEnd);
+
+      async function setCropRatio(targetRatio) {
+        if (!state.editorDraft) return;
+        const draft = state.editorDraft;
+        if (!targetRatio) {
+          draft.cropNorm = { x: 0, y: 0, w: 1, h: 1 };
+          renderEditor();
+          return;
+        }
+        const img = await loadImage(draft.dataUrl);
+        const oriented = orientedCanvas(img, draft.rotation || 0);
+        const iw = oriented.width;
+        const ih = oriented.height;
+        const imgRatio = iw / ih;
+
+        let normW = 1;
+        let normH = 1;
+        if (imgRatio > targetRatio) {
+          normH = 1;
+          normW = targetRatio / imgRatio;
+        } else {
+          normW = 1;
+          normH = imgRatio / targetRatio;
+        }
+        const normX = (1 - normW) / 2;
+        const normY = (1 - normH) / 2;
+        draft.cropNorm = { x: normX, y: normY, w: normW, h: normH };
+        renderEditor();
+      }
+
+        $('zoomRange').addEventListener('input', () => {
           if (!state.editorDraft) return;
-          state.editorDraft.cropX = 0;
-          state.editorDraft.cropY = 0;
+          state.editorDraft.zoom = Number($('zoomRange').value);
           syncEditorControls();
           renderEditor();
         });
 
-        $('cropRatio34').addEventListener('click', () => {
-          if (!state.editorDraft) return;
-          state.editorDraft.cropX = 0;
-          state.editorDraft.cropY = 12;
-          syncEditorControls();
-          renderEditor();
-        });
-
-        $('cropRatio11').addEventListener('click', () => {
-          if (!state.editorDraft) return;
-          state.editorDraft.cropX = 15;
-          state.editorDraft.cropY = 15;
-          syncEditorControls();
-          renderEditor();
-        });
-
-        $('cropRatio45').addEventListener('click', () => {
-          if (!state.editorDraft) return;
-          state.editorDraft.cropX = 0;
-          state.editorDraft.cropY = 6;
-          syncEditorControls();
-          renderEditor();
-        });
+        $('cropRatioFree').addEventListener('click', () => setCropRatio(null));
+        $('cropRatio34').addEventListener('click', () => setCropRatio(3 / 4));
+        $('cropRatio11').addEventListener('click', () => setCropRatio(1.0));
+        $('cropRatio45').addEventListener('click', () => setCropRatio(4 / 5));
+        $('resetCropBtn').addEventListener('click', () => setCropRatio(null));
 
         $('rotateLeftBtn').addEventListener('click', () => {
           if (!state.editorDraft) return;
           state.editorDraft.rotation -= 90;
+          state.editorDraft.cropNorm = { x: 0, y: 0, w: 1, h: 1 };
           syncEditorControls();
           renderEditor();
         });
         $('rotateRightBtn').addEventListener('click', () => {
           if (!state.editorDraft) return;
           state.editorDraft.rotation += 90;
+          state.editorDraft.cropNorm = { x: 0, y: 0, w: 1, h: 1 };
           syncEditorControls();
           renderEditor();
         });
