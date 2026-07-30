@@ -1062,27 +1062,44 @@
     </main>
   </div>
 
-  <input id="fileInput" class="sr-only" type="file" accept="image/*" capture="environment" />
+  <input id="fileInput" class="sr-only" type="file" accept="image/*" />
 
   <div id="editorModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="editorTitle">
     <div class="modal-card">
       <div class="modal-head">
-        <h3 id="editorTitle">Ajustar foto</h3>
+        <h3 id="editorTitle">Ajustar / Recortar foto</h3>
         <button id="closeEditorBtn" class="icon-btn" style="color:#163224;background:#eef3ef" type="button" aria-label="Cerrar">✕</button>
       </div>
       <div class="modal-body">
         <div class="editor-canvas-wrap"><canvas id="editorCanvas" width="600" height="800"></canvas></div>
         <div class="editor-controls">
           <div class="control-group">
-            <label for="zoomRange"><span>Zoom</span><span id="zoomValue">100%</span></label>
-            <input id="zoomRange" type="range" min="1" max="2.5" value="1" step="0.01" />
+            <label for="zoomRange"><span>Zoom / Escala</span><span id="zoomValue">100%</span></label>
+            <input id="zoomRange" type="range" min="0.4" max="3.0" value="1" step="0.01" />
           </div>
           <div class="control-group">
-            <label for="xRange"><span>Horizontal</span><span id="xValue">0</span></label>
+            <label><span>Recorte Rápido (Proporción)</span></label>
+            <div class="rotate-row" style="grid-template-columns: repeat(4, 1fr); gap: 6px;">
+              <button id="cropRatioFree" class="btn btn-light" style="padding: 6px 4px; font-size: 11px;" type="button">Completo</button>
+              <button id="cropRatio34" class="btn btn-light" style="padding: 6px 4px; font-size: 11px;" type="button">3:4</button>
+              <button id="cropRatio11" class="btn btn-light" style="padding: 6px 4px; font-size: 11px;" type="button">1:1</button>
+              <button id="cropRatio45" class="btn btn-light" style="padding: 6px 4px; font-size: 11px;" type="button">4:5</button>
+            </div>
+          </div>
+          <div class="control-group">
+            <label for="cropYRange"><span>Recorte Vertical (Alto)</span><span id="cropYValue">0%</span></label>
+            <input id="cropYRange" type="range" min="0" max="40" value="0" step="1" />
+          </div>
+          <div class="control-group">
+            <label for="cropXRange"><span>Recorte Horizontal (Ancho)</span><span id="cropXValue">0%</span></label>
+            <input id="cropXRange" type="range" min="0" max="40" value="0" step="1" />
+          </div>
+          <div class="control-group">
+            <label for="xRange"><span>Desplazamiento Horizontal</span><span id="xValue">0</span></label>
             <input id="xRange" type="range" min="-100" max="100" value="0" step="1" />
           </div>
           <div class="control-group">
-            <label for="yRange"><span>Vertical</span><span id="yValue">0</span></label>
+            <label for="yRange"><span>Desplazamiento Vertical</span><span id="yValue">0</span></label>
             <input id="yRange" type="range" min="-100" max="100" value="0" step="1" />
           </div>
           <div class="control-group">
@@ -1092,7 +1109,7 @@
               <button id="rotateRightBtn" class="btn btn-light" type="button">↷ 90°</button>
             </div>
           </div>
-          <div class="generate-note">Alinea la prenda y mantén la misma altura en las 4 vistas.</div>
+          <div class="generate-note">Recorta y encuadra la prenda manteniendo la misma altura en las 4 vistas.</div>
         </div>
       </div>
       <div class="modal-actions">
@@ -1332,8 +1349,8 @@
           state.stream = await navigator.mediaDevices.getUserMedia({
             video: {
               facingMode: { ideal: state.facingMode },
-              width: { ideal: 1920 },
-              height: { ideal: 2560 }
+              width: { ideal: 1920, max: 3840 },
+              height: { ideal: 1080, max: 2160 }
             },
             audio: false
           });
@@ -1342,7 +1359,17 @@
           emptyPhoto.style.display = 'none';
           photoPreview.classList.remove('visible');
           await cameraVideo.play();
-          showToast('Cámara lista.');
+
+          const track = state.stream.getVideoTracks()[0];
+          if (track && typeof track.getCapabilities === 'function') {
+            const caps = track.getCapabilities();
+            if (caps.zoom) {
+              const minZoom = caps.zoom.min || 1;
+              track.applyConstraints({ advanced: [{ zoom: minZoom }] }).catch(() => {});
+            }
+          }
+
+          showToast('Cámara vista amplia lista.');
         } catch (error) {
           console.error(error);
           showToast('No se pudo abrir la cámara. Revisa el permiso.', 'error');
@@ -1407,6 +1434,8 @@
           originalName,
           rotation: 0,
           zoom: 1,
+          cropX: 0,
+          cropY: 0,
           x: 0,
           y: 0
         };
@@ -1431,7 +1460,7 @@
         if (!shot) return;
         state.editorViewId = viewId;
         state.editorDraft = cloneShot(shot);
-        $('editorTitle').textContent = `Ajustar ${VIEWS.find(v => v.id === viewId).short}`;
+        $('editorTitle').textContent = `Ajustar / Recortar ${VIEWS.find(v => v.id === viewId).short}`;
         syncEditorControls();
         editorModal.classList.add('visible');
         editorModal.dataset.isNew = isNew ? '1' : '0';
@@ -1468,13 +1497,18 @@
       function syncEditorControls() {
         const draft = state.editorDraft;
         if (!draft) return;
-        $('zoomRange').value = draft.zoom;
-        $('xRange').value = draft.x;
-        $('yRange').value = draft.y;
-        $('zoomValue').textContent = `${Math.round(draft.zoom * 100)}%`;
-        $('xValue').textContent = draft.x;
-        $('yValue').textContent = draft.y;
-        $('rotationValue').textContent = `${normalizeRotation(draft.rotation)}°`;
+        $('zoomRange').value = draft.zoom || 1;
+        $('cropYRange').value = draft.cropY || 0;
+        $('cropXRange').value = draft.cropX || 0;
+        $('xRange').value = draft.x || 0;
+        $('yRange').value = draft.y || 0;
+
+        $('zoomValue').textContent = `${Math.round((draft.zoom || 1) * 100)}%`;
+        $('cropYValue').textContent = `${draft.cropY || 0}%`;
+        $('cropXValue').textContent = `${draft.cropX || 0}%`;
+        $('xValue').textContent = draft.x || 0;
+        $('yValue').textContent = draft.y || 0;
+        $('rotationValue').textContent = `${normalizeRotation(draft.rotation || 0)}°`;
       }
 
       function normalizeRotation(rotation) {
@@ -1507,17 +1541,31 @@
       }
 
       function drawShotCover(ctx, img, shot, dx, dy, dw, dh) {
-        const oriented = orientedCanvas(img, shot.rotation);
+        const oriented = orientedCanvas(img, shot.rotation || 0);
         const iw = oriented.width;
         const ih = oriented.height;
-        const baseScale = Math.max(dw / iw, dh / ih);
-        const scale = baseScale * shot.zoom;
+        const zoom = shot.zoom || 1;
+        const cropX = ((shot.cropX || 0) / 100);
+        const cropY = ((shot.cropY || 0) / 100);
+
+        const effIw = Math.max(iw * 0.1, iw * (1 - cropX * 2));
+        const effIh = Math.max(ih * 0.1, ih * (1 - cropY * 2));
+
+        const baseScale = Math.max(dw / effIw, dh / effIh);
+        const scale = baseScale * zoom;
+
         const sw = Math.min(iw, dw / scale);
         const sh = Math.min(ih, dh / scale);
-        const maxX = Math.max(0, (iw - sw) / 2);
-        const maxY = Math.max(0, (ih - sh) / 2);
-        const sx = Math.max(0, Math.min(iw - sw, (iw - sw) / 2 + (shot.x / 100) * maxX));
-        const sy = Math.max(0, Math.min(ih - sh, (ih - sh) / 2 + (shot.y / 100) * maxY));
+
+        const maxX = Math.max(0, (effIw - sw) / 2);
+        const maxY = Math.max(0, (effIh - sh) / 2);
+
+        const startX = (iw * cropX) + Math.max(0, (effIw - sw) / 2) + ((shot.x || 0) / 100) * maxX;
+        const startY = (ih * cropY) + Math.max(0, (effIh - sh) / 2) + ((shot.y || 0) / 100) * maxY;
+
+        const sx = Math.max(0, Math.min(iw - sw, startX));
+        const sy = Math.max(0, Math.min(ih - sh, startY));
+
         ctx.drawImage(oriented, sx, sy, sw, sh, dx, dy, dw, dh);
       }
 
@@ -1529,19 +1577,22 @@
           editorCtx.fillStyle = '#ffffff';
           editorCtx.fillRect(0, 0, editorCanvas.width, editorCanvas.height);
           drawShotCover(editorCtx, img, draft, 0, 0, editorCanvas.width, editorCanvas.height);
-          editorCtx.strokeStyle = 'rgba(163,230,53,.9)';
+
+          // Grid and Crop border
+          editorCtx.strokeStyle = 'rgba(34, 197, 94, .9)';
           editorCtx.lineWidth = 3;
-          editorCtx.strokeRect(18, 18, editorCanvas.width - 36, editorCanvas.height - 36);
-          editorCtx.strokeStyle = 'rgba(255,255,255,.55)';
+          editorCtx.strokeRect(10, 10, editorCanvas.width - 20, editorCanvas.height - 20);
+
+          editorCtx.strokeStyle = 'rgba(255,255,255,.6)';
           editorCtx.lineWidth = 1;
           [1/3, 2/3].forEach(f => {
             editorCtx.beginPath();
-            editorCtx.moveTo(editorCanvas.width * f, 18);
-            editorCtx.lineTo(editorCanvas.width * f, editorCanvas.height - 18);
+            editorCtx.moveTo(editorCanvas.width * f, 10);
+            editorCtx.lineTo(editorCanvas.width * f, editorCanvas.height - 10);
             editorCtx.stroke();
             editorCtx.beginPath();
-            editorCtx.moveTo(18, editorCanvas.height * f);
-            editorCtx.lineTo(editorCanvas.width - 18, editorCanvas.height * f);
+            editorCtx.moveTo(10, editorCanvas.height * f);
+            editorCtx.lineTo(editorCanvas.width - 10, editorCanvas.height * f);
             editorCtx.stroke();
           });
         } catch (error) {
@@ -1562,13 +1613,6 @@
         ctx.fillRect(0, 0, width, height);
         drawShotCover(ctx, img, shot, 0, 0, width, height);
         return canvas.toDataURL('image/jpeg', quality);
-      }
-
-      function compositeLabel(view) {
-        if (view.id === 'left' || view.id === 'right') {
-          return { line1: view.title, line2: 'SIDE' };
-        }
-        return { line1: view.title, line2: view.title };
       }
 
       async function updateThumbnail(viewId) {
@@ -1611,16 +1655,20 @@
         });
       }
 
+      function compositeLabel(view) {
+        return view.title;
+      }
+
       async function buildCompositeBlob() {
         if (state.finalBlob) return state.finalBlob;
         if (completedCount() !== 4) throw new Error('Faltan fotos.');
 
         const panelW = 720;
-        const protoH = 72;
-        const labelH = 174;
+        const labelH = 110;
         const photoH = 960;
+        const bottomH = 340;
         const width = panelW * 4;
-        const height = protoH + labelH + photoH;
+        const height = labelH + photoH + bottomH;
         const canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;
@@ -1629,42 +1677,25 @@
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, width, height);
 
-        ctx.fillStyle = '#10281d';
-        ctx.fillRect(0, 0, width, protoH);
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '700 30px Arial, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('PROTO', width / 2, protoH / 2 + 1);
-
         for (let index = 0; index < VIEWS.length; index++) {
           const view = VIEWS[index];
           const x = index * panelW;
           const shot = state.shots[view.id];
           const img = await loadImage(shot.dataUrl);
-          const label = compositeLabel(view);
 
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(x, protoH, panelW, labelH);
           ctx.fillStyle = '#0b0f0c';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.font = '700 53px Arial, sans-serif';
-          ctx.fillText(label.line1, x + panelW / 2, protoH + 56);
-          ctx.font = '700 38px Arial, sans-serif';
-          ctx.fillText(label.line2, x + panelW / 2, protoH + 122);
+          ctx.font = '800 52px Arial, sans-serif';
+          ctx.fillText(view.title, x + panelW / 2, labelH / 2 + 4);
 
-          drawShotCover(ctx, img, shot, x, protoH + labelH, panelW, photoH);
+          drawShotCover(ctx, img, shot, x, labelH, panelW, photoH);
 
           if (index > 0) {
             ctx.fillStyle = '#ffffff';
-            ctx.fillRect(x - 4, protoH, 8, labelH + photoH);
+            ctx.fillRect(x - 2, labelH, 4, photoH);
           }
         }
-
-        ctx.strokeStyle = '#10281d';
-        ctx.lineWidth = 6;
-        ctx.strokeRect(3, protoH + labelH + 3, width - 6, photoH - 6);
 
         state.finalBlob = await canvasToBlob(canvas, 'image/jpeg', .94);
         state.finalUrl = URL.createObjectURL(state.finalBlob);
@@ -1896,15 +1927,49 @@
         $('cancelEditorBtn').addEventListener('click', () => closeEditor(false));
         $('saveEditorBtn').addEventListener('click', () => closeEditor(true));
 
-        ['zoomRange', 'xRange', 'yRange'].forEach(id => {
+        ['zoomRange', 'cropYRange', 'cropXRange', 'xRange', 'yRange'].forEach(id => {
           $(id).addEventListener('input', () => {
             if (!state.editorDraft) return;
             state.editorDraft.zoom = Number($('zoomRange').value);
+            state.editorDraft.cropY = Number($('cropYRange').value);
+            state.editorDraft.cropX = Number($('cropXRange').value);
             state.editorDraft.x = Number($('xRange').value);
             state.editorDraft.y = Number($('yRange').value);
             syncEditorControls();
             renderEditor();
           });
+        });
+
+        $('cropRatioFree').addEventListener('click', () => {
+          if (!state.editorDraft) return;
+          state.editorDraft.cropX = 0;
+          state.editorDraft.cropY = 0;
+          syncEditorControls();
+          renderEditor();
+        });
+
+        $('cropRatio34').addEventListener('click', () => {
+          if (!state.editorDraft) return;
+          state.editorDraft.cropX = 0;
+          state.editorDraft.cropY = 12;
+          syncEditorControls();
+          renderEditor();
+        });
+
+        $('cropRatio11').addEventListener('click', () => {
+          if (!state.editorDraft) return;
+          state.editorDraft.cropX = 15;
+          state.editorDraft.cropY = 15;
+          syncEditorControls();
+          renderEditor();
+        });
+
+        $('cropRatio45').addEventListener('click', () => {
+          if (!state.editorDraft) return;
+          state.editorDraft.cropX = 0;
+          state.editorDraft.cropY = 6;
+          syncEditorControls();
+          renderEditor();
         });
 
         $('rotateLeftBtn').addEventListener('click', () => {
