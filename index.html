@@ -1314,11 +1314,9 @@
       }
 
       function startSession() {
-        const proto = sanitizeProto(protoInput.value);
+        let proto = sanitizeProto(protoInput.value);
         if (!proto) {
-          protoInput.focus();
-          showToast('Ingresa el proto.', 'error');
-          return;
+          proto = '20525';
         }
         state.proto = proto;
         protoInput.value = proto;
@@ -2149,35 +2147,6 @@
         window.addEventListener('touchmove', handleCanvasPointerMove, { passive: false });
         window.addEventListener('touchend', handleCanvasPointerEnd);
 
-      async function setCropRatio(targetRatio) {
-        if (!state.editorDraft) return;
-        const draft = state.editorDraft;
-        if (!targetRatio) {
-          draft.cropNorm = { x: 0, y: 0, w: 1, h: 1 };
-          renderEditor();
-          return;
-        }
-        const img = await loadImage(draft.dataUrl);
-        const oriented = orientedCanvas(img, draft.rotation || 0);
-        const iw = oriented.width;
-        const ih = oriented.height;
-        const imgRatio = iw / ih;
-
-        let normW = 1;
-        let normH = 1;
-        if (imgRatio > targetRatio) {
-          normH = 1;
-          normW = targetRatio / imgRatio;
-        } else {
-          normW = 1;
-          normH = imgRatio / targetRatio;
-        }
-        const normX = (1 - normW) / 2;
-        const normY = (1 - normH) / 2;
-        draft.cropNorm = { x: normX, y: normY, w: normW, h: normH };
-        renderEditor();
-      }
-
         $('zoomRange').addEventListener('input', () => {
           if (!state.editorDraft) return;
           state.editorDraft.zoom = Number($('zoomRange').value);
@@ -2224,6 +2193,35 @@
           stopCamera();
           if (state.finalUrl) URL.revokeObjectURL(state.finalUrl);
         });
+      }
+
+      async function setCropRatio(targetRatio) {
+        if (!state.editorDraft) return;
+        const draft = state.editorDraft;
+        if (!targetRatio) {
+          draft.cropNorm = { x: 0, y: 0, w: 1, h: 1 };
+          renderEditor();
+          return;
+        }
+        const img = await loadImage(draft.dataUrl);
+        const oriented = orientedCanvas(img, draft.rotation || 0);
+        const iw = oriented.width;
+        const ih = oriented.height;
+        const imgRatio = iw / ih;
+
+        let normW = 1;
+        let normH = 1;
+        if (imgRatio > targetRatio) {
+          normH = 1;
+          normW = targetRatio / imgRatio;
+        } else {
+          normW = 1;
+          normH = imgRatio / targetRatio;
+        }
+        const normX = (1 - normW) / 2;
+        const normY = (1 - normH) / 2;
+        draft.cropNorm = { x: normX, y: normY, w: normW, h: normH };
+        renderEditor();
       }
 
       renderStaticLists();
