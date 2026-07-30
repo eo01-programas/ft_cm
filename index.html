@@ -1853,11 +1853,17 @@
         if (state.finalBlob) return state.finalBlob;
         if (completedCount() !== 4) throw new Error('Faltan fotos.');
 
-        const panelH = 1600;   // altura común de la tira
-        const gap = 5;         // separador fino entre vistas
+        const photoH = 1200;                          // altura común de las fotos
+        const fontSize = 54;                          // tamaño del rótulo
+        const topMargin = 36;                         // franja blanca superior antes del texto
+        const labelAreaH = 64;                        // espacio ocupado por el texto
+        const headerGap = 30;                         // franja blanca entre el texto y la foto
+        const bottomMargin = 40;                      // franja blanca inferior
+
+        const photoY = topMargin + labelAreaH + headerGap;
 
         // 1) Medir: cada panel adopta la proporción exacta de su recorte,
-        //    así todo entra completo y sin franjas blancas.
+        //    así la foto entra completa y sin recortar nada.
         const panels = [];
         for (const view of VIEWS) {
           const shot = state.shots[view.id];
@@ -1868,44 +1874,36 @@
             view,
             oriented,
             ...rect,
-            panelW: Math.max(1, Math.round(panelH * (rect.sw / rect.sh)))
+            panelW: Math.max(1, Math.round(photoH * (rect.sw / rect.sh)))
           });
         }
 
-        const width = panels.reduce((sum, p) => sum + p.panelW, 0) + gap * (panels.length - 1);
-        const height = panelH;
+        const stripW = panels.reduce((sum, p) => sum + p.panelW, 0);
+        const width = stripW;
+        const height = photoY + photoH + bottomMargin;
+
         const canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext('2d');
 
-        // Fondo oscuro: solo se ve en los separadores.
-        ctx.fillStyle = '#141815';
+        // Fondo blanco: forma las franjas de arriba, entre el texto y las fotos, y de abajo.
+        ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, width, height);
 
-        // 2) Dibujar los 4 paneles pegados, cada uno lleno de borde a borde.
+        // 2) Rótulo centrado sobre cada panel + foto
+        ctx.font = `800 ${fontSize}px "Segoe UI", Arial, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const labelY = topMargin + labelAreaH / 2;
+
         let x = 0;
         for (const p of panels) {
-          ctx.drawImage(p.oriented, p.sx, p.sy, p.sw, p.sh, x, 0, p.panelW, panelH);
+          ctx.fillStyle = '#18181b';
+          ctx.fillText(p.view.title, x + p.panelW / 2, labelY);
 
-          // Etiqueta sobre la foto para no romper la continuidad de la tira.
-          const fontSize = Math.round(panelH * 0.030);
-          ctx.font = `800 ${fontSize}px Arial, sans-serif`;
-          ctx.textAlign = 'left';
-          ctx.textBaseline = 'alphabetic';
-          const padX = Math.round(fontSize * 0.62);
-          const padY = Math.round(fontSize * 0.42);
-          const chipX = x + Math.round(fontSize * 0.7);
-          const chipY = Math.round(fontSize * 0.7);
-          const chipW = ctx.measureText(p.view.title).width + padX * 2;
-          const chipH = fontSize + padY * 2;
-
-          ctx.fillStyle = 'rgba(9, 15, 11, .60)';
-          ctx.fillRect(chipX, chipY, chipW, chipH);
-          ctx.fillStyle = '#ffffff';
-          ctx.fillText(p.view.title, chipX + padX, chipY + padY + Math.round(fontSize * 0.82));
-
-          x += p.panelW + gap;
+          ctx.drawImage(p.oriented, p.sx, p.sy, p.sw, p.sh, x, photoY, p.panelW, photoH);
+          x += p.panelW;
         }
 
         state.finalBlob = await canvasToBlob(canvas, 'image/jpeg', .94);
