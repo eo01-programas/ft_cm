@@ -1520,29 +1520,16 @@
         return canvas;
       }
 
-      function drawShotFit(ctx, img, shot, dx, dy, dw, dh) {
-        const oriented = orientedCanvas(img, shot.rotation || 0);
-        const iw = oriented.width;
-        const ih = oriented.height;
+      // Devuelve la región exacta (en px de la imagen ya rotada) que el
+      // usuario eligió en el editor. Es la única fuente de recorte.
+      function getCropRect(oriented, shot) {
         const norm = getCropNorm(shot);
-
-        // Región exacta elegida por el usuario en el editor.
-        const sx = iw * norm.x;
-        const sy = ih * norm.y;
-        const sw = Math.max(10, iw * norm.w);
-        const sh = Math.max(10, ih * norm.h);
-
-        // Ajuste "contain": la región entra completa dentro del panel.
-        // Si la proporción no coincide, se rellena con blanco en vez de recortar.
-        const scale = Math.min(dw / sw, dh / sh);
-        const drawW = sw * scale;
-        const drawH = sh * scale;
-        const drawX = dx + (dw - drawW) / 2;
-        const drawY = dy + (dh - drawH) / 2;
-
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(dx, dy, dw, dh);
-        ctx.drawImage(oriented, sx, sy, sw, sh, drawX, drawY, drawW, drawH);
+        return {
+          sx: oriented.width * norm.x,
+          sy: oriented.height * norm.y,
+          sw: Math.max(10, oriented.width * norm.w),
+          sh: Math.max(10, oriented.height * norm.h)
+        };
       }
 
       function getEditorImageGeometry(oriented) {
@@ -1798,17 +1785,23 @@
         dragMode = null;
       }
 
-      async function createShotDataUrl(viewId, width, height, quality = .9) {
+      async function createShotDataUrl(viewId, maxSide = 1600, quality = .9) {
         const shot = state.shots[viewId];
         if (!shot) return '';
         const img = await loadImage(shot.dataUrl);
+        const oriented = orientedCanvas(img, shot.rotation || 0);
+        const { sx, sy, sw, sh } = getCropRect(oriented, shot);
+
+        // El lienzo toma la proporción del recorte: sin franjas blancas.
+        const scale = Math.min(1, maxSide / Math.max(sw, sh));
+        const w = Math.max(1, Math.round(sw * scale));
+        const h = Math.max(1, Math.round(sh * scale));
+
         const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
+        canvas.width = w;
+        canvas.height = h;
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, width, height);
-        drawShotFit(ctx, img, shot, 0, 0, width, height);
+        ctx.drawImage(oriented, sx, sy, sw, sh, 0, 0, w, h);
         return canvas.toDataURL('image/jpeg', quality);
       }
 
@@ -1820,7 +1813,7 @@
           return;
         }
         try {
-          const src = await createShotDataUrl(viewId, 180, 220, .78);
+          const src = await createShotDataUrl(viewId, 220, .78);
           thumb.innerHTML = `<img src="${src}" alt="Miniatura ${viewId}" />`;
         } catch (error) {
           console.error(error);
@@ -1840,7 +1833,7 @@
         emptyPhoto.style.display = 'none';
         photoPreview.classList.add('visible');
         try {
-          activePreviewImg.src = await createShotDataUrl(view.id, 720, 960, .88);
+          activePreviewImg.src = await createShotDataUrl(view.id, 960, .88);
         } catch (error) {
           console.error(error);
         }
@@ -1860,38 +1853,59 @@
         if (state.finalBlob) return state.finalBlob;
         if (completedCount() !== 4) throw new Error('Faltan fotos.');
 
-        const panelW = 720;
-        const labelH = 110;
-        const photoH = 960;
-        const bottomH = 340;
-        const width = panelW * 4;
-        const height = labelH + photoH + bottomH;
+        const panelH = 1600;   // altura común de la tira
+        const gap = 5;         // separador fino entre vistas
+
+        // 1) Medir: cada panel adopta la proporción exacta de su recorte,
+        //    así todo entra completo y sin franjas blancas.
+        const panels = [];
+        for (const view of VIEWS) {
+          const shot = state.shots[view.id];
+          const img = await loadImage(shot.dataUrl);
+          const oriented = orientedCanvas(img, shot.rotation || 0);
+          const rect = getCropRect(oriented, shot);
+          panels.push({
+            view,
+            oriented,
+            ...rect,
+            panelW: Math.max(1, Math.round(panelH * (rect.sw / rect.sh)))
+          });
+        }
+
+        const width = panels.reduce((sum, p) => sum + p.panelW, 0) + gap * (panels.length - 1);
+        const height = panelH;
         const canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext('2d');
 
-        ctx.fillStyle = '#ffffff';
+        // Fondo oscuro: solo se ve en los separadores.
+        ctx.fillStyle = '#141815';
         ctx.fillRect(0, 0, width, height);
 
-        for (let index = 0; index < VIEWS.length; index++) {
-          const view = VIEWS[index];
-          const x = index * panelW;
-          const shot = state.shots[view.id];
-          const img = await loadImage(shot.dataUrl);
+        // 2) Dibujar los 4 paneles pegados, cada uno lleno de borde a borde.
+        let x = 0;
+        for (const p of panels) {
+          ctx.drawImage(p.oriented, p.sx, p.sy, p.sw, p.sh, x, 0, p.panelW, panelH);
 
-          ctx.fillStyle = '#0b0f0c';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.font = '800 52px Arial, sans-serif';
-          ctx.fillText(view.title, x + panelW / 2, labelH / 2 + 4);
+          // Etiqueta sobre la foto para no romper la continuidad de la tira.
+          const fontSize = Math.round(panelH * 0.030);
+          ctx.font = `800 ${fontSize}px Arial, sans-serif`;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'alphabetic';
+          const padX = Math.round(fontSize * 0.62);
+          const padY = Math.round(fontSize * 0.42);
+          const chipX = x + Math.round(fontSize * 0.7);
+          const chipY = Math.round(fontSize * 0.7);
+          const chipW = ctx.measureText(p.view.title).width + padX * 2;
+          const chipH = fontSize + padY * 2;
 
-          drawShotFit(ctx, img, shot, x, labelH, panelW, photoH);
+          ctx.fillStyle = 'rgba(9, 15, 11, .60)';
+          ctx.fillRect(chipX, chipY, chipW, chipH);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(p.view.title, chipX + padX, chipY + padY + Math.round(fontSize * 0.82));
 
-          if (index > 0) {
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(x - 2, labelH, 4, photoH);
-          }
+          x += p.panelW + gap;
         }
 
         state.finalBlob = await canvasToBlob(canvas, 'image/jpeg', .94);
@@ -2033,7 +2047,7 @@
           const entries = [{ name: `${state.proto}.jpg`, data: new Uint8Array(await finalBlob.arrayBuffer()) }];
 
           for (const view of VIEWS) {
-            const dataUrl = await createShotDataUrl(view.id, 1200, 1600, .92);
+            const dataUrl = await createShotDataUrl(view.id, 1600, .92);
             const blob = await dataUrlToBlob(dataUrl);
             entries.push({
               name: `${state.proto}_${view.id === 'left' ? 'LEFT_SIDE' : view.id === 'right' ? 'RIGHT_SIDE' : view.title}.jpg`,
