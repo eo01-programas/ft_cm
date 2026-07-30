@@ -1414,6 +1414,9 @@
         const reader = new FileReader();
         reader.onload = () => assignShot(VIEWS[state.activeIndex].id, reader.result, file.name);
         reader.onerror = () => showToast('No se pudo leer la imagen.', 'error');
+        reader.readAsDataURL(file);
+      }
+
       function getCropNorm(shot) {
         if (!shot) return { x: 0, y: 0, w: 1, h: 1 };
         if (shot.cropNorm && typeof shot.cropNorm.w === 'number') {
@@ -1808,8 +1811,6 @@
       }
 
       function handleCanvasPointerEnd() {
-        dragMode = null;
-      }PointerEnd() {
         dragMode = null;
       }
 
