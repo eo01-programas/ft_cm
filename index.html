@@ -398,7 +398,7 @@
 
     .capture-stage {
       display: grid;
-      grid-template-columns: minmax(220px, .95fr) minmax(240px, 1.05fr);
+      grid-template-columns: 1fr;
       gap: 18px;
       min-height: 480px;
     }
@@ -491,11 +491,14 @@
 
     .photo-zone {
       position: relative;
-      min-height: 100%;
+      width: min(100%, 420px);
+      aspect-ratio: 3 / 4;
+      margin: 0 auto;
       overflow: hidden;
       border: 2px dashed #c7d5cb;
       border-radius: 20px;
       background: linear-gradient(145deg, #fafcfb, #edf3ee);
+      box-shadow: 0 8px 24px rgba(16,40,29,.08);
     }
 
     .empty-photo,
@@ -538,7 +541,7 @@
 
     .photo-preview { display: none; background: #060a07; }
     .photo-preview.visible { display: block; }
-    .photo-preview img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .photo-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
     .preview-toolbar {
       position: absolute;
@@ -558,29 +561,29 @@
 
     .camera-view { display: none; background: #060a07; }
     .camera-view.visible { display: block; }
-    .camera-view video { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .camera-view video { width: 100%; height: 100%; object-fit: cover; display: block; }
 
     .camera-overlay {
       position: absolute;
-      inset: 6%;
+      inset: 12px;
       pointer-events: none;
-      border: 2px solid rgba(163,230,53,.72);
-      border-radius: 18px;
+      border: 2px solid rgba(163,230,53,.85);
+      border-radius: 16px;
       background:
-        linear-gradient(rgba(255,255,255,.26) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,.26) 1px, transparent 1px);
+        linear-gradient(rgba(255,255,255,.18) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.18) 1px, transparent 1px);
       background-size: 33.333% 33.333%;
-      box-shadow: 0 0 0 9999px rgba(0,0,0,.14);
     }
 
     .camera-center-line {
       position: absolute;
-      top: 6%;
-      bottom: 6%;
+      top: 12px;
+      bottom: 12px;
       left: 50%;
-      width: 1px;
-      background: rgba(250,204,21,.85);
+      width: 2px;
+      background: rgba(250,204,21,.9);
       pointer-events: none;
+      transform: translateX(-50%);
     }
 
     .camera-controls {
@@ -984,14 +987,6 @@
             <div id="stepper" class="stepper"></div>
 
             <div class="capture-stage">
-              <div class="guide-box">
-                <span id="guideNumber" class="guide-number">Vista 1/4</span>
-                <h3 id="guideTitle">FRONT</h3>
-                <div id="guideSubtitle" class="direction-sub"></div>
-                <div class="guide-figure" aria-hidden="true"></div>
-                <ul id="guideTips" class="guide-tips"></ul>
-              </div>
-
               <div class="photo-zone">
                 <div id="emptyPhoto" class="empty-photo">
                   <div class="empty-icon" aria-hidden="true">📷</div>
@@ -1181,10 +1176,6 @@
       const protoChipValue = $('protoChipValue');
       const stepper = $('stepper');
       const shotList = $('shotList');
-      const guideNumber = $('guideNumber');
-      const guideTitle = $('guideTitle');
-      const guideSubtitle = $('guideSubtitle');
-      const guideTips = $('guideTips');
       const emptyPhoto = $('emptyPhoto');
       const emptyTitle = $('emptyTitle');
       const photoPreview = $('photoPreview');
@@ -1289,11 +1280,6 @@
         await stopCamera();
         state.activeIndex = index;
         const view = VIEWS[index];
-        guideNumber.textContent = `Vista ${index + 1}/4`;
-        guideTitle.textContent = view.title;
-        guideSubtitle.textContent = view.subtitle;
-        guideSubtitle.style.display = view.subtitle ? '' : 'none';
-        guideTips.innerHTML = view.tips.map(tip => `<li>${tip}</li>`).join('');
         emptyTitle.textContent = `Toma ${view.short}`;
         updateProgress();
         await renderActivePreview();
@@ -1324,9 +1310,9 @@
           state.stream = await navigator.mediaDevices.getUserMedia({
             video: {
               facingMode: { ideal: state.facingMode },
-              aspectRatio: { ideal: 0.75 },
-              width: { ideal: 1440, max: 3840 },
-              height: { ideal: 1920, max: 2160 }
+              width: { ideal: 1080, max: 2160 },
+              height: { ideal: 1920, max: 3840 },
+              aspectRatio: { ideal: 0.75 }
             },
             audio: false
           });
@@ -1371,15 +1357,36 @@
       }
 
       async function captureFrame() {
-        if (!cameraVideo.videoWidth || !cameraVideo.videoHeight) {
+        const vw = cameraVideo.videoWidth;
+        const vh = cameraVideo.videoHeight;
+        if (!vw || !vh) {
           showToast('Espera a que la cámara esté lista.', 'error');
           return;
         }
+
+        const targetW = 1080;
+        const targetH = 1440;
+
         const canvas = document.createElement('canvas');
-        canvas.width = cameraVideo.videoWidth;
-        canvas.height = cameraVideo.videoHeight;
+        canvas.width = targetW;
+        canvas.height = targetH;
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(cameraVideo, 0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, targetW, targetH);
+
+        const videoRatio = vw / vh;
+        const targetRatio = targetW / targetH;
+
+        let sx = 0, sy = 0, sw = vw, sh = vh;
+        if (videoRatio > targetRatio) {
+          sw = vh * targetRatio;
+          sx = (vw - sw) / 2;
+        } else {
+          sh = vw / targetRatio;
+          sy = (vh - sh) / 2;
+        }
+
+        ctx.drawImage(cameraVideo, sx, sy, sw, sh, 0, 0, targetW, targetH);
         const dataUrl = dataUrlFromCanvas(canvas, .94);
         await stopCamera();
         assignShot(VIEWS[state.activeIndex].id, dataUrl, 'captura-camara.jpg');
