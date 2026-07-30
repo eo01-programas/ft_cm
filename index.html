@@ -708,7 +708,7 @@
 
     .result-actions {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 11px;
       padding: clamp(18px, 3vw, 28px);
     }
@@ -1052,13 +1052,11 @@
           <div class="result-actions">
             <button id="downloadJpgBtn" class="btn btn-primary" type="button">JPG</button>
             <button id="downloadZipBtn" class="btn btn-dark" type="button">ZIP</button>
-            <button id="nativeShareBtn" class="btn btn-yellow" type="button">Compartir</button>
-            <button id="whatsappBtn" class="btn btn-light" type="button">WhatsApp</button>
-            <button id="emailBtn" class="btn btn-light" type="button">Correo</button>
+            <button id="nativeShareBtn" class="btn btn-yellow" type="button">Compartir JPG</button>
             <button id="newProtoBtn" class="btn btn-danger" type="button">Nuevo</button>
           </div>
 
-          <p class="share-note"><strong>Nota:</strong> Compartir envia el JPG en dispositivos compatibles. WhatsApp y correo abren un mensaje listo.</p>
+          <p class="share-note"><strong>Nota:</strong> Compartir envia el JPG en dispositivos compatibles.</p>
         </div>
       </section>
     </main>
@@ -1122,7 +1120,7 @@
         {
           id: 'front',
           title: 'FRONT',
-          subtitle: '',
+          subtitle: 'FRONT',
           short: 'Frente',
           tips: [
             'Frente total.',
@@ -1133,7 +1131,7 @@
         {
           id: 'back',
           title: 'BACK',
-          subtitle: '',
+          subtitle: 'BACK',
           short: 'Espalda',
           tips: [
             'Gira 180°.',
@@ -1144,7 +1142,7 @@
         {
           id: 'left',
           title: 'LEFT',
-          subtitle: 'Lateral',
+          subtitle: 'SIDE',
           short: 'Lateral izq.',
           tips: [
             'Lado izquierdo.',
@@ -1155,7 +1153,7 @@
         {
           id: 'right',
           title: 'RIGHT',
-          subtitle: 'Lateral',
+          subtitle: 'SIDE',
           short: 'Lateral der.',
           tips: [
             'Lado derecho.',
@@ -1566,6 +1564,13 @@
         return canvas.toDataURL('image/jpeg', quality);
       }
 
+      function compositeLabel(view) {
+        if (view.id === 'left' || view.id === 'right') {
+          return { line1: view.title, line2: 'SIDE' };
+        }
+        return { line1: view.title, line2: view.title };
+      }
+
       async function updateThumbnail(viewId) {
         const thumb = $(`thumb-${viewId}`);
         const shot = state.shots[viewId];
@@ -1630,13 +1635,14 @@
         ctx.font = '700 30px Arial, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(`PROTO ${state.proto}`, width / 2, protoH / 2 + 1);
+        ctx.fillText('PROTO', width / 2, protoH / 2 + 1);
 
         for (let index = 0; index < VIEWS.length; index++) {
           const view = VIEWS[index];
           const x = index * panelW;
           const shot = state.shots[view.id];
           const img = await loadImage(shot.dataUrl);
+          const label = compositeLabel(view);
 
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(x, protoH, panelW, labelH);
@@ -1644,9 +1650,9 @@
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.font = '700 53px Arial, sans-serif';
-          ctx.fillText(view.title, x + panelW / 2, protoH + 56);
+          ctx.fillText(label.line1, x + panelW / 2, protoH + 56);
           ctx.font = '700 38px Arial, sans-serif';
-          ctx.fillText(view.subtitle, x + panelW / 2, protoH + 122);
+          ctx.fillText(label.line2, x + panelW / 2, protoH + 122);
 
           drawShotCover(ctx, img, shot, x, protoH + labelH, panelW, photoH);
 
@@ -1830,8 +1836,8 @@
           const blob = await buildCompositeBlob();
           const file = new File([blob], `${state.proto}.jpg`, { type: 'image/jpeg' });
           const shareData = {
-            title: `Proto ${state.proto}`,
-            text: `Proto ${state.proto}: FRONT, BACK, LEFT y RIGHT.`,
+            title: 'PROTO',
+            text: state.proto,
             files: [file]
           };
 
@@ -1847,21 +1853,6 @@
             showToast('No se pudo compartir.', 'error');
           }
         }
-      }
-
-      function openWhatsApp() {
-        if (state.finalBlob) downloadBlob(state.finalBlob, `${state.proto}.jpg`);
-        const text = `Comparto el proto ${state.proto}: FRONT, BACK, LEFT y RIGHT. Archivo: ${state.proto}.jpg.`;
-        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
-        showToast('Adjunta el JPG desde Descargas si hace falta.');
-      }
-
-      function openEmail() {
-        if (state.finalBlob) downloadBlob(state.finalBlob, `${state.proto}.jpg`);
-        const subject = `Fotos Proto ${state.proto}`;
-        const body = `Hola,\n\nComparto el proto ${state.proto}: FRONT, BACK, LEFT y RIGHT.\n\nArchivo: ${state.proto}.jpg\n\nSaludos.`;
-        window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-        showToast('Adjunta el JPG desde Descargas si hace falta.');
       }
 
       async function resetSession() {
@@ -1937,8 +1928,6 @@
         $('downloadJpgBtn').addEventListener('click', downloadJpg);
         $('downloadZipBtn').addEventListener('click', downloadZip);
         $('nativeShareBtn').addEventListener('click', shareFile);
-        $('whatsappBtn').addEventListener('click', openWhatsApp);
-        $('emailBtn').addEventListener('click', openEmail);
         $('newProtoBtn').addEventListener('click', resetSession);
 
         document.addEventListener('visibilitychange', () => {
