@@ -1411,30 +1411,10 @@
         return { x, y, w, h };
       }
 
-      async function calcInitialCropNorm(dataUrl, rotation = 0) {
-        try {
-          const img = await loadImage(dataUrl);
-          const oriented = orientedCanvas(img, rotation);
-          const iw = oriented.width;
-          const ih = oriented.height;
-          const imgRatio = iw / ih;
-          const targetRatio = 720 / 960;
-
-          let normW = 1;
-          let normH = 1;
-          if (imgRatio > targetRatio) {
-            normH = 1;
-            normW = targetRatio / imgRatio;
-          } else {
-            normW = 1;
-            normH = imgRatio / targetRatio;
-          }
-          const normX = (1 - normW) / 2;
-          const normY = (1 - normH) / 2;
-          return { x: normX, y: normY, w: normW, h: normH };
-        } catch (e) {
-          return { x: 0, y: 0, w: 1, h: 1 };
-        }
+      async function calcInitialCropNorm() {
+        // La foto entra completa: no se recorta nada automáticamente.
+        // Solo se recorta si el usuario mueve las esquinas en el editor.
+        return { x: 0, y: 0, w: 1, h: 1 };
       }
 
       async function assignShot(viewId, dataUrl, originalName) {
@@ -1540,27 +1520,29 @@
         return canvas;
       }
 
-      function drawShotCover(ctx, img, shot, dx, dy, dw, dh) {
+      function drawShotFit(ctx, img, shot, dx, dy, dw, dh) {
         const oriented = orientedCanvas(img, shot.rotation || 0);
         const iw = oriented.width;
         const ih = oriented.height;
         const norm = getCropNorm(shot);
 
+        // Región exacta elegida por el usuario en el editor.
         const sx = iw * norm.x;
         const sy = ih * norm.y;
         const sw = Math.max(10, iw * norm.w);
         const sh = Math.max(10, ih * norm.h);
 
-        const zoom = shot.zoom || 1;
-        const baseScale = Math.max(dw / sw, dh / sh);
-        const scale = baseScale * zoom;
+        // Ajuste "contain": la región entra completa dentro del panel.
+        // Si la proporción no coincide, se rellena con blanco en vez de recortar.
+        const scale = Math.min(dw / sw, dh / sh);
+        const drawW = sw * scale;
+        const drawH = sh * scale;
+        const drawX = dx + (dw - drawW) / 2;
+        const drawY = dy + (dh - drawH) / 2;
 
-        const finalSw = Math.min(sw, dw / scale);
-        const finalSh = Math.min(sh, dh / scale);
-        const finalSx = sx + (sw - finalSw) / 2;
-        const finalSy = sy + (sh - finalSh) / 2;
-
-        ctx.drawImage(oriented, finalSx, finalSy, finalSw, finalSh, dx, dy, dw, dh);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(dx, dy, dw, dh);
+        ctx.drawImage(oriented, sx, sy, sw, sh, drawX, drawY, drawW, drawH);
       }
 
       function getEditorImageGeometry(oriented) {
@@ -1826,7 +1808,7 @@
         const ctx = canvas.getContext('2d');
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, width, height);
-        drawShotCover(ctx, img, shot, 0, 0, width, height);
+        drawShotFit(ctx, img, shot, 0, 0, width, height);
         return canvas.toDataURL('image/jpeg', quality);
       }
 
@@ -1904,7 +1886,7 @@
           ctx.font = '800 52px Arial, sans-serif';
           ctx.fillText(view.title, x + panelW / 2, labelH / 2 + 4);
 
-          drawShotCover(ctx, img, shot, x, labelH, panelW, photoH);
+          drawShotFit(ctx, img, shot, x, labelH, panelW, photoH);
 
           if (index > 0) {
             ctx.fillStyle = '#ffffff';
