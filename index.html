@@ -1400,7 +1400,13 @@
                         <button id="newProtoBtn" class="btn btn-light btn-block" type="button" style="grid-column: 1 / -1;">Nuevo Proto</button>
                     </div>
 
-                    <p class="share-note"><strong>Correo:</strong> RMazuelos@cofaco.com | <strong>Asunto y Mensaje:</strong> PROTO <span id="protoNoteValue"></span></p>
+                    <p class="share-note" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;">
+                        <span><strong>Destinatario:</strong> RMazuelos@cofaco.com &bull; <strong>Asunto/Mensaje:</strong> PROTO <span id="protoNoteValue"></span></span>
+                        <span>
+                            <a id="directMailtoBtn" href="#" style="color:var(--green-700);font-weight:700;margin-right:12px;">✉️ Abrir App Correo</a>
+                            <a id="directOutlookBtn" href="#" target="_blank" style="color:var(--green-700);font-weight:700;">🌐 Abrir Outlook Web</a>
+                        </span>
+                    </p>
                 </div>
             </section>
         </main>
@@ -2268,6 +2274,19 @@
                     resultTitle.textContent = `PROTO ${state.proto}`;
                     const protoNoteValue = $('protoNoteValue');
                     if (protoNoteValue) protoNoteValue.textContent = state.proto;
+
+                    const text = `PROTO ${state.proto}`;
+                    const recipient = 'RMazuelos@cofaco.com';
+                    const encodedText = encodeURIComponent(text);
+                    const mailtoUrl = `mailto:${recipient}?subject=${encodedText}&body=${encodedText}`;
+                    const outlookWebUrl = `https://outlook.office.com/mail/deeplink/compose?to=${recipient}&subject=${encodedText}&body=${encodedText}`;
+
+                    const directMailtoBtn = $('directMailtoBtn');
+                    if (directMailtoBtn) directMailtoBtn.href = mailtoUrl;
+
+                    const directOutlookBtn = $('directOutlookBtn');
+                    if (directOutlookBtn) directOutlookBtn.href = outlookWebUrl;
+
                     showScreen(screenResult);
                 } catch (error) {
                     console.error(error);
@@ -2428,23 +2447,28 @@
                     const file = new File([blob], `${state.proto}.jpg`, { type: 'image/jpeg' });
                     const text = `PROTO ${state.proto}`;
 
-                    if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
-                        await navigator.share({
-                            title: text,
-                            text: text,
-                            files: [file]
-                        });
-                    } else {
-                        downloadBlob(blob, `${state.proto}.jpg`);
-                        const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
-                        window.open(waUrl, '_blank');
-                        showToast(`JPG descargado. Adjúntalo en WhatsApp con el mensaje: ${text}`);
+                    downloadBlob(blob, `${state.proto}.jpg`);
+
+                    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+                    if (isMobile && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                        try {
+                            await navigator.share({
+                                title: text,
+                                text: text,
+                                files: [file]
+                            });
+                            return;
+                        } catch (e) {
+                            if (e?.name === 'AbortError') return;
+                        }
                     }
+
+                    const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+                    window.open(waUrl, '_blank');
+                    showToast(`Foto descargada (${state.proto}.jpg). Adjúntala en WhatsApp.`);
                 } catch (error) {
-                    if (error?.name !== 'AbortError') {
-                        console.error(error);
-                        showToast('No se pudo enviar por WhatsApp.', 'error');
-                    }
+                    console.error(error);
+                    showToast('No se pudo enviar por WhatsApp.', 'error');
                 } finally {
                     setLoading(false);
                 }
@@ -2459,23 +2483,41 @@
                     const body = `PROTO ${state.proto}`;
                     const recipient = 'RMazuelos@cofaco.com';
 
-                    if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
-                        await navigator.share({
-                            title: subject,
-                            text: body,
-                            files: [file]
-                        });
-                    } else {
-                        downloadBlob(blob, `${state.proto}.jpg`);
-                        const mailtoUrl = `mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-                        window.location.href = mailtoUrl;
-                        showToast(`JPG descargado. Se abrió el correo para ${recipient}`);
+                    downloadBlob(blob, `${state.proto}.jpg`);
+
+                    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+                    if (isMobile && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                        try {
+                            await navigator.share({
+                                title: subject,
+                                text: body,
+                                files: [file]
+                            });
+                            return;
+                        } catch (e) {
+                            if (e?.name === 'AbortError') return;
+                        }
                     }
+
+                    const encodedSubject = encodeURIComponent(subject);
+                    const encodedBody = encodeURIComponent(body);
+                    const mailtoUrl = `mailto:${recipient}?subject=${encodedSubject}&body=${encodedBody}`;
+                    const outlookWebUrl = `https://outlook.office.com/mail/deeplink/compose?to=${recipient}&subject=${encodedSubject}&body=${encodedBody}`;
+
+                    const mailtoLink = document.createElement('a');
+                    mailtoLink.href = mailtoUrl;
+                    document.body.appendChild(mailtoLink);
+                    mailtoLink.click();
+                    mailtoLink.remove();
+
+                    setTimeout(() => {
+                        window.open(outlookWebUrl, '_blank');
+                    }, 400);
+
+                    showToast(`Foto descargada (${state.proto}.jpg). Correo redactado para ${recipient}`);
                 } catch (error) {
-                    if (error?.name !== 'AbortError') {
-                        console.error(error);
-                        showToast('No se pudo preparar el correo.', 'error');
-                    }
+                    console.error(error);
+                    showToast('No se pudo preparar el correo.', 'error');
                 } finally {
                     setLoading(false);
                 }
